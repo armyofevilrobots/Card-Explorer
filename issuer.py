@@ -4,11 +4,20 @@
 Card Explorer
 Written by Colin Keigher
 http://afreak.ca
-All items in here are licensed under the LGPL
+All items in here are licensed under the LGPL (see LICENCE.TXT)
 
 Release notes
 ====================================================================
-0.1 (December 5, 2012) - Initial release. Includes IIN searching.
+0.2 (December 6, 2012)
+- Predictive input for a second track.
+- Able to work with two types of financial cards. Some don't have more than two tracks.
+- Moved service codes into the database.
+- Added additional values to the IIN search in case items are missing.
+- Rewrote the functions so it is a bit more organised.
+- Made preparations for other types of card formats for a later version.
+
+0.1 (December 5, 2012) 
+- Initial release. Includes IIN searching.
 """
 
 import calendar
