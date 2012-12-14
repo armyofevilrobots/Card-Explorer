@@ -12,7 +12,7 @@ Release notes
 - Checks against ISO/IEC 7812 upon initial scan.
 - Improved the input mechanism so the data is sort of sanitised.
 - Reading of financial cards works a bit better per ISO/IEC 7813.
-
+- Added some items that will address rewards cards, but this has yet to be added to Main() function.
 
 0.2 (December 6, 2012)
 - Predictive input for a second track.
