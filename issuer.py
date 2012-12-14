@@ -8,6 +8,12 @@ All items in here are licensed under the LGPL (see LICENCE.TXT)
 
 Release notes
 ====================================================================
+0.4 (December 13, 2012)
+- Checks against ISO/IEC 7812 upon initial scan.
+- Improved the input mechanism so the data is sort of sanitised.
+- Reading of financial cards works a bit better per ISO/IEC 7813.
+
+
 0.2 (December 6, 2012)
 - Predictive input for a second track.
 - Able to work with two types of financial cards. Some don't have more than two tracks.
@@ -30,37 +36,55 @@ what sort of card it might be.
 
 def Main():
 	# For now you can only scan financial cards that start with %B--this will change.
-	print "Please swipe your card through the reader (hit enter to skip a track):"
-	CardTrackInit = str(raw_input("Track 1: "))
-	if CardTrackInit[0:1] == chr(37): # Preparing for a financial card scan.
-		CardTrack1 = CardTrackInit.split("^")
-		CardTrack2 = str(raw_input("Track 2: ")).split("=") # Allowing input to ensure that we don't spill over.
-		if CardTrackInit[1:2] == "B":
-			CardType = 1 # Value has been determined as a possible financial card.
-		else:
-			CardType = 0
-	# Some cards start with "=", a lot of them being financial cards.
-	elif CardTrackInit[0:1] == ";": 
-		# The extra semi-colon is just for padding. Easier this way I guess?
-		if CardTrackInit.find("=") != -1:
-			CardTrack1 = [ ";" + CardTrackInit.split("=")[0], "Unknown (see card?)", CardTrackInit.split("=")[1] ]
-			CardType = 1
-		else:
-			CardTrack1 = CardTrackInit	
-			CardType = 0
-	# No idea what the card is. Let's pass it on to other scripts.
-	else:
-		CardType = 0
+	
+	CardData = MainInput()
 
-	# If everything is good, we'll pass it on to the component that determines how to process and display the data.		
-	MainDisplayOutput(CardType,CardTrack1)
+	# Time to sort out the data here. What sort of card is this?
+	if CardData[0][:1] == chr(37): # If we start with a % in the start sentinal, let's work with the data this way.
+		if CardData[0][1:2] == "B": # Let's do this if we think it's ISO compliant.
+			if "^" in CardData[0]:
+				if int(CardData[0][2:3]) in [3, 4, 5, 6]:
+					print FCCardOutput(CardData[0][2:].split("^")) # Presuming it is a financial card here.
+				else:
+					print CardData[0][2:].split("^")
+					print CardData[0][2:3]
+			else:
+				MainExitMsg("Not recognised yet!")
+		else:
+			MainExitMsg("Not recognised yet!")
+	if CardData[:1] == ";": # Some cards use this as the sentinal.
+		if int(CardData[1:2]) in [4, 5, 6]:
+			if CardData.split("=")[1] == None:
+				MainExitMsg("Not recognised yet!")
+			else:
+				# This format I have not run across except with RBC cards. Any else? It lacks a name.
+				CardData = [ CardData.split("=")[0][1:], "No data", CardData.split("=")[1] ]
+				print FCCardOutput(CardData)
+		else:
+			MainExitMsg("Not recognised yet!")
+
+	print " "
 
 def MainCardType(value):
 	return MainDBQuery("SELECT * FROM CardType WHERE ID=" + str(value))[1]
 
+def MainInput():
+	print "Please swipe your card through the reader (hit enter to skip a track):"
+	InputStr = str(raw_input(">> "))
+	if InputStr[0:1] == chr(37): # Preparing for a two-track card scan.
+		InputStr = [ InputStr, str(raw_input(">> ")) ]
+	print " "
+	return InputStr
+
+def MainExitMsg(msg):
+	print msg
+	quit()
+
 def MainDisplayOutput(mtype, string):
 	print ""
 	print "Card type: ", MainCardType(mtype)
+	if mtype == 0:
+		OtherCard(string)
 	if mtype == 1:
 		FCCardOutput(string)
 
@@ -77,6 +101,8 @@ def FCFriendlyNumber(cnumber):
 		output = cnumber[0:4] + " " + cnumber[4:8] + " " + cnumber[8:12] + " " + cnumber[12:]
 	elif numlen == 15: # American Express has this format.
 		output = cnumber[0:4] + " " + cnumber[4:10] + " " + cnumber[10:]
+	elif numlen == 9: # Probably safe to display it as XXX XXX XXX
+		output = cnumber[0:3] + " " + cnumber[3:6] + " " + cnumber[6:]
 	else: 
 		output = cnumber
 	return output
@@ -84,8 +110,8 @@ def FCFriendlyNumber(cnumber):
 # Outputs a YYMM value from a card into a human-readable format.
 def FCDateFormat(strdate): 
 	output = calendar.month_name[int(strdate[2:])] + " " + strdate[0:2]
-	if int(strdate[0:2]) > 12:
-		output = output + " (fake value?)" # "Smarch" weather, while notoriously bad, does not exist!
+	if int(strdate[2:]) > 12:
+		output = "Smarch? (fake value?)" # "Smarch" weather, while notoriously bad, does not exist!
 	return output
 
 def FCCardOutput(strcard):
@@ -93,13 +119,14 @@ def FCCardOutput(strcard):
 	if len(strcard[2][4:7]) < 3:
 		FCServiceCode = "Odd format. Are you sure it is a financial card?"
 	else:
-		FCServiceCode = strcard[2][4:7] + " (" + FCServiceDecode(strcard[2][4:7]) + ")"
-
-	print "Card number: ", FCFriendlyNumber(strcard[0][2:])
-	print "Card holder: ", strcard[1]
-	print "Expiration date: ", FCDateFormat(strcard[2][:4])
-	print "Service code: ", FCServiceCode
-	print "Issuer: ", FCINNSearch(strcard[0][2:8])
+		FCServiceCode = str(strcard[2][4:7]) + " (" + FCServiceDecode(strcard[2][4:7]) + ")"
+	
+	print "Card type:       ", ISOCardType(strcard[0][:1])
+	print "Card number:     ", FCFriendlyNumber(strcard[0])
+	print "Card holder:     ", strcard[1]
+	print "Expiration date: ", FCDateFormat(strcard[2][0:4])
+	print "Service code:    ", FCServiceCode
+	print "Issuer:          ", FCINNSearch(strcard[0][:6])
 
 # Returns a friendly value for the card's service codes.
 def FCServiceDecode(code):
@@ -119,11 +146,11 @@ def FCServiceDecodeReturn(numtype, digit):
 def FCINNSearch(string):
 	# We'll attempt to get something a bit more specific using 6-digits
 	try:
-		return MainDBQuery("SELECT * FROM IINs WHERE IIN LIKE " + str(string))[1]
+		output = MainDBQuery("SELECT * FROM IINs WHERE IIN LIKE " + str(string))[1]
 	except:
 		# Should that fail, we'll attempt 4-digits
 		try:
-			return MainDBQuery("SELECT * FROM IINs WHERE IIN LIKE " + str(string[0:4]))[1]
+			output = MainDBQuery("SELECT * FROM IINs WHERE IIN LIKE " + str(string[0:4]))[1]
 		# We'll go generic or go broke! I'll add more as we go along.
 		except:
 			if int(string[0:2]) in [33, 34, 37]:
@@ -147,19 +174,46 @@ def FCINNSearch(string):
 				output = "Miscilaneous gift card or store credit card"
 			else:
 				output = "Unable to determine issuer"
-			return output
+	return output
+
 
 """
 Miscilaneous cards. Some of these will make perfect sense and others will not and therefore we have to guess?
+Some of this includes generic functions.
 """
+
+def ISOCardType(value):
+	return MainDBQuery("SELECT * FROM ISOCardTypes WHERE ID=" + str(value))[1]
 
 # This is meant for working with rewards cards from stores and so forth.
 def OtherCard(string):
-	return "hello" # This will be worked on for a later version.
+	print "Card number: ", FCFriendlyNumber(filter(lambda x: x.isdigit(), string[0])[OtherIIN(0, string[0]):])
+	print "IIN: ", OtherIIN(2, string[0])
+	print "Issuer: ", OtherIIN(1, string[0]) # This will be worked on for a later version.
 
 # This will search IINs for values and their types
-def OtherIIN(qtype, iin):
-	return "tbd"
+def OtherIIN(status, iin):
+	# Let's clear out the special characters left over so we can search.
+	iin = filter(lambda x: x.isdigit(), iin)
+	# Same as before, we'll try for six and if that fails, we'll go for four.
+	try:
+		output = MainDBQuery("SELECT * FROM IINs WHERE IIN LIKE " + str(iin)[:6])[1]
+		valid = 6
+	except:
+		# And if six fails, try four and then if not, fail.
+		try: 
+			output = MainDBQuery("SELECT * FROM IINs WHERE IIN LIKE " + str(iin)[:4])[1]
+			valid = 4
+		except:
+			output = "Unable to locate IIN"
+			valid = 0
+	if status == 2:
+		if valid == 0:
+			return "Not found"
+		else:
+			return str(iin)[:valid] 
+	if status == 1: return output
+	if status == 0: return valid
 
 """
 Below is really meant for the meat and potatoes of the application.
@@ -179,7 +233,7 @@ def MainErrorOut(message):
 	exit(1)
 
 # Just because I want to maintain version numbers
-AppVer = 0.2
+AppVer = 0.4
 
 print "Card Explorer", str(AppVer)
 print "Created by Colin Keigher (http://afreak.ca)"
